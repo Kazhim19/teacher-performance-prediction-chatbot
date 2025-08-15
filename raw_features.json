@@ -1,0 +1,19 @@
+[
+  "teacher_id",
+  "age",
+  "gender",
+  "education_level",
+  "years_exp",
+  "employment_type",
+  "subject",
+  "perf_score",
+  "student_outcomes",
+  "peer_reviews",
+  "attendance_rate",
+  "admin_support",
+  "workload",
+  "resource_availability",
+  "date_of_hire",
+  "date_of_last_eval",
+  "time_to_event"
+]
