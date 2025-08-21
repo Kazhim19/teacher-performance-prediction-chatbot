@@ -97,44 +97,54 @@ class TeacherPerformanceChatbot:
         except Exception as e:
             return f"Error calling Ollama API: {str(e)}"
     
-    def classify_intent(self, user_input):
-        """Classify user intent to determine how to respond"""
-        user_input_lower = user_input.lower()
+    def classify_intent_with_llm(self, user_input, llm_choice):
+        """Use LLM to classify user intent"""
+        prompt = f"""
+        You are an intent classification system for EduBot, a teacher performance prediction chatbot.
         
-        # Greeting patterns
-        greeting_patterns = [
-            'hello', 'hi', 'hey', 'good morning', 'good afternoon', 'good evening',
-            'greetings', 'howdy', 'what\'s up', 'how are you'
-        ]
+        Analyze the user's input and classify it into one of these categories:
         
-        # Introduction/identity patterns
-        identity_patterns = [
-            'who are you', 'what are you', 'tell me about yourself', 'introduce yourself',
-            'what do you do', 'what is your purpose', 'what can you help with'
-        ]
+        1. **greeting** - User is greeting, saying hello, or starting a conversation
+           Examples: "Hello", "Hi", "Good morning", "Hey there", "What's up"
         
-        # Prediction-related patterns
-        prediction_patterns = [
-            'predict', 'performance', 'teacher', 'risk', 'years', 'experience', 'score',
-            'education', 'bachelor', 'master', 'phd', 'full-time', 'part-time',
-            'math', 'science', 'english', 'history', 'physics', 'chemistry', 'biology',
-            'age', 'gender', 'workload', 'attendance', 'admin support'
-        ]
+        2. **identity** - User is asking about the chatbot's identity, purpose, or capabilities
+           Examples: "Who are you?", "What do you do?", "Tell me about yourself", "What can you help with?"
         
-        # Check for greetings
-        if any(pattern in user_input_lower for pattern in greeting_patterns):
-            return 'greeting'
+        3. **prediction** - User wants teacher performance prediction or provides teacher data
+           Examples: "Predict teacher performance", "I'm a math teacher with 5 years experience", "Can you analyze this teacher's data?"
         
-        # Check for identity questions
-        if any(pattern in user_input_lower for pattern in identity_patterns):
-            return 'identity'
+        4. **out_of_scope** - User is asking about topics unrelated to teacher performance prediction
+           Examples: "What's the weather?", "Tell me a joke", "How to cook pasta?", "What's 2+2?"
         
-        # Check for prediction-related content
-        if any(pattern in user_input_lower for pattern in prediction_patterns):
-            return 'prediction'
+        User Input: "{user_input}"
         
-        # Default to general conversation
-        return 'general'
+        IMPORTANT: Respond with ONLY the category name (greeting, identity, prediction, or out_of_scope) and nothing else.
+        """
+        
+        if llm_choice == "openai":
+            response = self.call_openai_api(prompt)
+        elif llm_choice == "ollama":
+            response = self.call_ollama_api(prompt)
+        else:
+            return "prediction"  # Default fallback
+        
+        # Check for API errors
+        if response.startswith("Error"):
+            return "prediction"  # Default fallback
+        
+        # Extract the intent from response
+        intent = response.strip().lower()
+        
+        # Validate the intent
+        valid_intents = ['greeting', 'identity', 'prediction', 'out_of_scope']
+        if intent in valid_intents:
+            return intent
+        else:
+            # Try to find valid intent in the response
+            for valid_intent in valid_intents:
+                if valid_intent in intent:
+                    return valid_intent
+            return "prediction"  # Default fallback
     
     def generate_greeting_response(self, user_input, llm_choice):
         """Generate a friendly greeting response"""
@@ -179,21 +189,21 @@ class TeacherPerformanceChatbot:
         elif llm_choice == "ollama":
             return self.call_ollama_api(prompt)
     
-    def generate_general_response(self, user_input, llm_choice):
-        """Generate a response for general queries outside the scope"""
+    def generate_out_of_scope_response(self, user_input, llm_choice):
+        """Generate a response for out-of-scope queries"""
         prompt = f"""
         You are EduBot, an AI assistant specialized in teacher performance prediction.
         
-        The user asked: "{user_input}"
+        The user asked something outside your expertise: "{user_input}"
         
-        This question seems to be outside your main area of expertise. Respond politely by:
-        1. Acknowledging their question
+        Respond politely by:
+        1. Acknowledging their question politely
         2. Explaining that you specialize specifically in teacher performance prediction and analysis
         3. Redirecting them to your main capabilities (teacher performance assessment, risk prediction, educational support recommendations)
-        4. Inviting them to ask about teacher-related topics
+        4. Inviting them to ask about teacher-related topics or share teacher information for analysis
         5. Being helpful and friendly while staying focused on your domain
         
-        Keep it brief and redirect them back to your core function.
+        Keep it brief, polite, and redirect them back to your core function. Don't be dismissive - be understanding but clear about your specialization.
         """
         
         if llm_choice == "openai":
@@ -348,8 +358,8 @@ class TeacherPerformanceChatbot:
     def process_user_input(self, user_input, llm_choice):
         """Main function to process user input through the complete pipeline"""
         
-        # Step 1: Classify the intent
-        intent = self.classify_intent(user_input)
+        # Step 1: Use LLM to classify the intent
+        intent = self.classify_intent_with_llm(user_input, llm_choice)
         
         # Handle different intents
         if intent == 'greeting':
@@ -360,8 +370,8 @@ class TeacherPerformanceChatbot:
             response = self.generate_identity_response(user_input, llm_choice)
             return response
         
-        elif intent == 'general':
-            response = self.generate_general_response(user_input, llm_choice)
+        elif intent == 'out_of_scope':
+            response = self.generate_out_of_scope_response(user_input, llm_choice)
             return response
         
         elif intent == 'prediction':
@@ -387,8 +397,8 @@ class TeacherPerformanceChatbot:
             
             # Step 4: Check if teacher data was found
             if not extracted_data.get('has_teacher_data', False):
-                # This shouldn't happen given our intent classification, but just in case
-                return self.generate_general_response(user_input, llm_choice)
+                # If LLM classified as prediction but no data found, ask for more info
+                return "I understand you're interested in teacher performance prediction, but I need specific teacher information to analyze. Please provide details like age, experience, education level, subject taught, performance scores, etc."
             
             # Step 5: Check for missing fields
             if extracted_data.get('missing_fields'):
