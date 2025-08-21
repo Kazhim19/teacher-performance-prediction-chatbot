@@ -237,8 +237,8 @@ class TeacherPerformanceChatbot:
         - subject: "Math", "Science", "English", "History", "Physics", "Chemistry", "Biology"
         - perf_score: Performance score (0-100 scale)
         - student_outcomes: Student outcome score (0-100 scale)
-        - peer_reviews: Peer review score (0-100 scale) - convert ratings like "3.9 out of 5" to percentage
-        - attendance_rate: Attendance percentage (0-100)
+        - peer_reviews: Peer review ratings like "3.90 out of 5"
+        - attendance_rate: Attendance rating like "0.85 out of 1"
         - admin_support: "Yes" or "No"
         - workload: Numeric workload indicator
         - resource_availability: "Low", "Medium", or "High"
