@@ -4,17 +4,19 @@ import json
 import requests
 import re
 import os
+from dotenv import load_dotenv
 from preprocessing_function import PreprocessingFunction
+import base64
 
 # Load environment variables
-
+load_dotenv()
 
 class TeacherPerformanceChatbot:
     def __init__(self):
         self.load_model_and_features()
         self.load_env_config()
         self.setup_llm_config()
-
+        
     def load_model_and_features(self):
         """Load the trained model and feature columns"""
         try:
@@ -23,47 +25,47 @@ class TeacherPerformanceChatbot:
                 self.feature_columns = json.load(f)
             with open('raw_features.json', 'r') as f:
                 self.raw_features = json.load(f)
-
+            
             # Load model metadata for AUC display
             try:
                 with open('model_metadata.json', 'r') as f:
                     self.model_metadata = json.load(f)
             except:
                 self.model_metadata = {"test_auc": "N/A", "cv_auc": "N/A"}
-
+            
         except Exception as e:
             self.model_metadata = {"test_auc": "N/A", "cv_auc": "N/A"}
-
+            
     def load_env_config(self):
         """Load configuration from environment variables"""
-        self.openai_api_key = st.secrets["OPENAI_API_KEY"]
-        self.openai_model = st.secrets["OPENAI_MODEL"]
-        self.ollama_model = st.secrets["OLLAMA_MODEL"]
-        self.ollama_url = st.secrets["OLLAMA_URL"]
-
+        self.openai_api_key = os.getenv('OPENAI_API_KEY')
+        self.openai_model = os.getenv('OPENAI_MODEL', 'gpt-4.1')
+        self.ollama_model = os.getenv('OLLAMA_MODEL', 'llama3.2:3b')
+        self.ollama_url = os.getenv('OLLAMA_URL', 'http://localhost:11434')
+        
     def setup_llm_config(self):
         """Setup LLM configuration options"""
         self.llm_options = {
             "OpenAI": "openai",
             "Ollama": "ollama"
         }
-
+        
     def call_openai_api(self, prompt):
         """Call OpenAI API using environment variables"""
         if not self.openai_api_key:
             return "Error: OpenAI API key not found in environment variables"
-
+            
         headers = {
             "Authorization": f"Bearer {self.openai_api_key}",
             "Content-Type": "application/json"
         }
-
+        
         data = {
             "model": self.openai_model,
             "messages": [{"role": "user", "content": prompt}],
             "temperature": 0.4
         }
-
+        
         try:
             response = requests.post(
                 "https://api.openai.com/v1/chat/completions",
@@ -75,7 +77,7 @@ class TeacherPerformanceChatbot:
             return response.json()["choices"][0]["message"]["content"]
         except Exception as e:
             return f"Error calling OpenAI API: {str(e)}"
-
+    
     def call_ollama_api(self, prompt):
         """Call Ollama local API using environment variables"""
         data = {
@@ -83,7 +85,7 @@ class TeacherPerformanceChatbot:
             "prompt": prompt,
             "stream": False
         }
-
+        
         try:
             response = requests.post(
                 f"{self.ollama_url}/api/generate",
@@ -94,22 +96,128 @@ class TeacherPerformanceChatbot:
             return response.json()["response"]
         except Exception as e:
             return f"Error calling Ollama API: {str(e)}"
-
+    
+    def classify_intent(self, user_input):
+        """Classify user intent to determine how to respond"""
+        user_input_lower = user_input.lower()
+        
+        # Greeting patterns
+        greeting_patterns = [
+            'hello', 'hi', 'hey', 'good morning', 'good afternoon', 'good evening',
+            'greetings', 'howdy', 'what\'s up', 'how are you'
+        ]
+        
+        # Introduction/identity patterns
+        identity_patterns = [
+            'who are you', 'what are you', 'tell me about yourself', 'introduce yourself',
+            'what do you do', 'what is your purpose', 'what can you help with'
+        ]
+        
+        # Prediction-related patterns
+        prediction_patterns = [
+            'predict', 'performance', 'teacher', 'risk', 'years', 'experience', 'score',
+            'education', 'bachelor', 'master', 'phd', 'full-time', 'part-time',
+            'math', 'science', 'english', 'history', 'physics', 'chemistry', 'biology',
+            'age', 'gender', 'workload', 'attendance', 'admin support'
+        ]
+        
+        # Check for greetings
+        if any(pattern in user_input_lower for pattern in greeting_patterns):
+            return 'greeting'
+        
+        # Check for identity questions
+        if any(pattern in user_input_lower for pattern in identity_patterns):
+            return 'identity'
+        
+        # Check for prediction-related content
+        if any(pattern in user_input_lower for pattern in prediction_patterns):
+            return 'prediction'
+        
+        # Default to general conversation
+        return 'general'
+    
+    def generate_greeting_response(self, user_input, llm_choice):
+        """Generate a friendly greeting response"""
+        prompt = f"""
+        You are EduBot, a friendly AI assistant specialized in teacher performance prediction.
+        
+        The user just greeted you: "{user_input}"
+        
+        Respond with a warm, professional greeting that:
+        1. Greets them back appropriately
+        2. Briefly introduces yourself as EduBot, a teacher performance prediction assistant
+        3. Offers to help them with teacher performance analysis
+        4. Keeps it concise and friendly
+        
+        Example tone: "Hello! I'm EduBot, your AI assistant for teacher performance prediction and analysis. I'm here to help you assess teaching effectiveness and provide insights for educational support. How can I assist you today?"
+        """
+        
+        if llm_choice == "openai":
+            return self.call_openai_api(prompt)
+        elif llm_choice == "ollama":
+            return self.call_ollama_api(prompt)
+    
+    def generate_identity_response(self, user_input, llm_choice):
+        """Generate a response explaining the chatbot's identity and purpose"""
+        prompt = f"""
+        You are EduBot, an AI assistant specialized in teacher performance prediction.
+        
+        The user is asking about who you are: "{user_input}"
+        
+        Provide a comprehensive but concise response that explains:
+        1. Your name (EduBot) and role as an AI assistant
+        2. Your specialty in teacher performance prediction and analysis
+        3. What you can help with (analyzing teacher data, predicting performance risks, providing recommendations)
+        4. The types of information you work with (age, experience, education, performance scores, etc.)
+        5. How you can support educational institutions in teacher development
+        
+        Keep it professional, informative, and engaging. Mention that you're here to help with early intervention and teacher support.
+        """
+        
+        if llm_choice == "openai":
+            return self.call_openai_api(prompt)
+        elif llm_choice == "ollama":
+            return self.call_ollama_api(prompt)
+    
+    def generate_general_response(self, user_input, llm_choice):
+        """Generate a response for general queries outside the scope"""
+        prompt = f"""
+        You are EduBot, an AI assistant specialized in teacher performance prediction.
+        
+        The user asked: "{user_input}"
+        
+        This question seems to be outside your main area of expertise. Respond politely by:
+        1. Acknowledging their question
+        2. Explaining that you specialize specifically in teacher performance prediction and analysis
+        3. Redirecting them to your main capabilities (teacher performance assessment, risk prediction, educational support recommendations)
+        4. Inviting them to ask about teacher-related topics
+        5. Being helpful and friendly while staying focused on your domain
+        
+        Keep it brief and redirect them back to your core function.
+        """
+        
+        if llm_choice == "openai":
+            return self.call_openai_api(prompt)
+        elif llm_choice == "ollama":
+            return self.call_ollama_api(prompt)
+    
     def create_extraction_prompt(self, user_input):
         """Create prompt for extracting structured data from user input"""
         raw_features_str = ', '.join(self.raw_features)
-
+        
         prompt = f"""
         You are a data extraction assistant for a teacher performance prediction system.
         
-        Extract structured data from the user's input and return it as a JSON object.
-        
-        Required features (extract what's available, set others to null):
-        {raw_features_str}
+        Analyze the user's input and determine if it contains teacher performance data for prediction.
         
         User Input: "{user_input}"
         
-        Guidelines:
+        IMPORTANT: Only attempt data extraction if the user input contains specific teacher information for performance prediction.
+        
+        If the input contains teacher data, extract it as JSON with these features:
+        {raw_features_str}
+        
+        Guidelines for extraction:
         - teacher_id: Can be null for prediction
         - age: Extract numeric age
         - gender: "M" or "F"
@@ -128,30 +236,30 @@ class TeacherPerformanceChatbot:
         - date_of_last_eval: MM/DD/YYYY format (default to today if not provided)
         - time_to_event: Can be null for prediction
         
-        IMPORTANT: 
-        - Return ONLY valid JSON format with NO COMMENTS
-        - Do not add // or /* */ comments in the JSON
-        - Do not add explanations within the JSON structure
-        
-        If information is missing, list the missing required fields but teacher_id and time_to_event can be null.
-        
-        Return exactly this format with NO additional text or comments:
+        Return format:
         {{
+            "has_teacher_data": true/false,
             "data": {{
-                "teacher_id": null,
-                "age": numeric_value,
-                "gender": "M_or_F",
-                ...
+                // teacher data if has_teacher_data is true
             }},
             "missing_fields": []
         }}
+        
+        If the input does not contain teacher performance data (e.g., greetings, general questions, off-topic), return:
+        {{
+            "has_teacher_data": false,
+            "data": null,
+            "missing_fields": []
+        }}
+        
+        RETURN ONLY VALID JSON WITH NO COMMENTS OR ADDITIONAL TEXT.
         """
         return prompt
-
+    
     def create_response_prompt(self, prediction_prob, risk_level, user_input):
         """Create prompt for generating human-readable response"""
         prompt = f"""
-        You are a helpful AI assistant for a teacher performance prediction system.
+        You are EduBot, a helpful AI assistant for teacher performance prediction.
         
         A teacher's performance has been analyzed with the following results:
         - Prediction Probability: {prediction_prob:.3f} ({prediction_prob*100:.1f}%)
@@ -164,6 +272,7 @@ class TeacherPerformanceChatbot:
         2. Interprets the risk level
         3. Offers specific, actionable recommendations based on the risk level
         4. Maintains a supportive, non-judgmental tone
+        5. Addresses the user directly and professionally
         
         Risk Level Guidelines:
         - Low Risk (0-25%): Positive reinforcement, maintain current practices
@@ -171,10 +280,10 @@ class TeacherPerformanceChatbot:
         - High Risk (50-75%): Significant concern, immediate intervention needed
         - Critical Risk (75%+): Urgent attention required, comprehensive support plan
         
-        Keep response concise but informative (2-3 paragraphs).
+        Keep response concise but informative (2-3 paragraphs). Start with a friendly acknowledgment.
         """
         return prompt
-
+    
     def extract_json_from_response(self, response):
         """Extract JSON from LLM response - handles comments and formatting"""
         try:
@@ -183,34 +292,33 @@ class TeacherPerformanceChatbot:
                 return json.loads(response.strip())
             except:
                 pass
-
+            
             # Method 2: Remove comments and try again
             cleaned_response = response
             # Remove // style comments
             cleaned_response = re.sub(r'//.*?(?=\n|$)', '', cleaned_response)
-            # Remove /* */ style comments
-            cleaned_response = re.sub(
-                r'/\*.*?\*/', '', cleaned_response, flags=re.DOTALL)
-
+            # Remove /* */ style comments  
+            cleaned_response = re.sub(r'/\*.*?\*/', '', cleaned_response, flags=re.DOTALL)
+            
             try:
                 return json.loads(cleaned_response.strip())
             except:
                 pass
-
+                
             # Method 3: Find JSON block within response
             json_match = re.search(r'\{.*\}', cleaned_response, re.DOTALL)
             if json_match:
                 json_str = json_match.group()
                 return json.loads(json_str)
-
+            
             print(f"Could not parse JSON from response: {response}")
             return None
-
+            
         except Exception as e:
             print(f"JSON parsing error: {e}")
             print(f"Raw response: {response}")
             return None
-
+    
     def predict_performance(self, teacher_data):
         """Make prediction using the trained model"""
         try:
@@ -218,10 +326,10 @@ class TeacherPerformanceChatbot:
             processed_data = PreprocessingFunction.preprocess_for_prediction(
                 teacher_data, self.feature_columns
             )
-
+            
             # Make prediction
             prediction_prob = self.model.predict_proba(processed_data)[0][1]
-
+            
             # Determine risk level
             if prediction_prob < 0.25:
                 risk_level = "Low Risk"
@@ -231,95 +339,155 @@ class TeacherPerformanceChatbot:
                 risk_level = "High Risk"
             else:
                 risk_level = "Critical Risk"
-
+            
             return prediction_prob, risk_level
-
+            
         except Exception as e:
             return None, f"Error in prediction: {str(e)}"
-
+    
     def process_user_input(self, user_input, llm_choice):
         """Main function to process user input through the complete pipeline"""
+        
+        # Step 1: Classify the intent
+        intent = self.classify_intent(user_input)
+        
+        # Handle different intents
+        if intent == 'greeting':
+            response = self.generate_greeting_response(user_input, llm_choice)
+            return response
+        
+        elif intent == 'identity':
+            response = self.generate_identity_response(user_input, llm_choice)
+            return response
+        
+        elif intent == 'general':
+            response = self.generate_general_response(user_input, llm_choice)
+            return response
+        
+        elif intent == 'prediction':
+            # Step 2: Try to extract structured data using LLM
+            extraction_prompt = self.create_extraction_prompt(user_input)
+            
+            if llm_choice == "openai":
+                llm_response = self.call_openai_api(extraction_prompt)
+            elif llm_choice == "ollama":
+                llm_response = self.call_ollama_api(extraction_prompt)
+            else:
+                return "Invalid LLM choice"
+            
+            # Check for API errors
+            if llm_response.startswith("Error"):
+                return llm_response
+            
+            # Step 3: Parse JSON response
+            extracted_data = self.extract_json_from_response(llm_response)
+            
+            if not extracted_data:
+                return f"Could not process the request. Please try again or provide more specific teacher information."
+            
+            # Step 4: Check if teacher data was found
+            if not extracted_data.get('has_teacher_data', False):
+                # This shouldn't happen given our intent classification, but just in case
+                return self.generate_general_response(user_input, llm_choice)
+            
+            # Step 5: Check for missing fields
+            if extracted_data.get('missing_fields'):
+                missing_fields_msg = f"I found some teacher information, but I need more details to make a prediction. Missing: {', '.join(extracted_data['missing_fields'])}. Please provide these details so I can help you better."
+                return missing_fields_msg
+            
+            # Step 6: Make ML prediction
+            teacher_data = extracted_data['data']
+            prediction_prob, risk_level = self.predict_performance(teacher_data)
+            
+            if prediction_prob is None:
+                return f"I encountered an issue with the prediction: {risk_level}. Please check your data and try again."
+            
+            # Step 7: Generate human-readable response
+            response_prompt = self.create_response_prompt(prediction_prob, risk_level, user_input)
+            
+            if llm_choice == "openai":
+                final_response = self.call_openai_api(response_prompt)
+            elif llm_choice == "ollama":
+                final_response = self.call_ollama_api(response_prompt)
+            
+            return {
+                'prediction_probability': prediction_prob,
+                'risk_level': risk_level,
+                'response': final_response,
+                'extracted_data': teacher_data
+            }
+        
+        # Fallback
+        return "I'm not sure how to help with that. I specialize in teacher performance prediction. Please share teacher information for analysis, or ask me about what I can do!"
 
-        # Step 1: Extract structured data using LLM
-        extraction_prompt = self.create_extraction_prompt(user_input)
+def get_base64_image(image_path):
+    with open(image_path, "rb") as f:
+        data = f.read()
+    return base64.b64encode(data).decode()
 
-        if llm_choice == "openai":
-            llm_response = self.call_openai_api(extraction_prompt)
-        elif llm_choice == "ollama":
-            llm_response = self.call_ollama_api(extraction_prompt)
-        else:
-            return "Invalid LLM choice"
-
-        # Check for API errors
-        if llm_response.startswith("Error"):
-            return llm_response
-
-        # Step 2: Parse JSON response
-        extracted_data = self.extract_json_from_response(llm_response)
-
-        if not extracted_data or 'data' not in extracted_data:
-            return f"Could not extract structured data. LLM Response: {llm_response}"
-
-        # Step 3: Check for missing fields
-        if extracted_data.get('missing_fields'):
-            missing_fields_msg = f"Missing required information: {', '.join(extracted_data['missing_fields'])}"
-            return missing_fields_msg
-
-        # Step 4: Make ML prediction
-        teacher_data = extracted_data['data']
-        prediction_prob, risk_level = self.predict_performance(teacher_data)
-
-        if prediction_prob is None:
-            return f"Prediction error: {risk_level}"
-
-        # Step 5: Generate human-readable response
-        response_prompt = self.create_response_prompt(
-            prediction_prob, risk_level, user_input)
-
-        if llm_choice == "openai":
-            final_response = self.call_openai_api(response_prompt)
-        elif llm_choice == "ollama":
-            final_response = self.call_ollama_api(response_prompt)
-
-        return {
-            'prediction_probability': prediction_prob,
-            'risk_level': risk_level,
-            'response': final_response,
-            'extracted_data': teacher_data
-        }
-
+img_base64 = get_base64_image("./robot.png")
 
 def main():
     st.set_page_config(
-        page_title="Teacher Performance Prediction Chatbot",
-        page_icon="👨‍🏫",
+        page_title="EduBot - Teacher Performance Prediction Assistant",
+        page_icon="./robot.png",
         layout="wide"
     )
+    
+    st.markdown(
+        f"""
+        <style>
+            .header-container {{
+                display: flex;
+                align-items: center;
+                justify-content: flex-start;
+                gap: 12px;
+            }}
+            .header-container img {{
+                width: 50px;
+            }}
+            @media (max-width: 768px) {{
+                .header-container {{
+                    flex-direction: column;
+                    text-align: center;
+                }}
+                .header-container img {{
+                    width: 25%;
+                }}
+            }}
+        </style>
 
-    st.title("👨‍🏫 Teacher Performance Prediction Chatbot")
+        <div class="header-container">
+            <img src="data:image/png;base64,{img_base64}" alt="EduBot">
+            <h1>EduBot - Teacher Performance Prediction Assistant</h1>
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
+
     st.markdown("*AI-powered early intervention system for teacher support*")
-
+    
     # Initialize chatbot
     if 'chatbot' not in st.session_state:
         st.session_state.chatbot = TeacherPerformanceChatbot()
-
+    
     # Initialize chat history
     if 'chat_history' not in st.session_state:
         st.session_state.chat_history = []
-
+    
     # Initialize processing state
     if 'is_processing' not in st.session_state:
         st.session_state.is_processing = False
-
+    
     # Sidebar configuration
     st.sidebar.header("🔧 Configuration")
-
+    
     # LLM Selection
     llm_choice = st.sidebar.selectbox(
         "Choose LLM Provider:",
         list(st.session_state.chatbot.llm_options.keys())
     )
-
+    
     # Display current configuration
     st.sidebar.subheader("📋 Current Settings")
     if llm_choice == "OpenAI":
@@ -331,73 +499,68 @@ def main():
     elif llm_choice == "Ollama":
         st.sidebar.info(f"Model: {st.session_state.chatbot.ollama_model}")
         st.sidebar.info(f"URL: {st.session_state.chatbot.ollama_url}")
-
+    
     # Model Performance Metrics
     st.sidebar.subheader("📊 Model Performance")
     try:
         col_a, col_b = st.sidebar.columns(2)
         with col_a:
-            st.metric(
-                "Test AUC", f"{st.session_state.chatbot.model_metadata.get('test_auc', 'N/A'):.3f}")
+            st.metric("Test AUC", f"{st.session_state.chatbot.model_metadata.get('test_auc', 'N/A'):.3f}")
         with col_b:
-            st.metric(
-                "CV AUC", f"{st.session_state.chatbot.model_metadata.get('cv_auc', 'N/A'):.3f}")
+            st.metric("CV AUC", f"{st.session_state.chatbot.model_metadata.get('cv_auc', 'N/A'):.3f}")
     except:
         st.sidebar.info("Model metrics not available")
-
+    
     # Clear chat history
     if st.sidebar.button("🗑️ Clear Chat History"):
         st.session_state.chat_history = []
         st.rerun()
-
+    
     # Main chat interface
     col1, col2 = st.columns([3, 1])
-
+    
     with col1:
-        st.subheader("💬 Chat with the AI Assistant")
-
+        st.subheader("💬 Chat with EduBot")
+        
         # Display chat history
         chat_container = st.container()
         with chat_container:
             for i, (user_msg, bot_response) in enumerate(st.session_state.chat_history):
                 # User message
                 st.markdown(f"**👤 You:** {user_msg}")
-
+                
                 # Bot response
                 if isinstance(bot_response, dict):
-                    st.markdown(
-                        f"**🤖 AI Assistant:** {bot_response['response']}")
-
+                    st.markdown(f"**🤖 EduBot:** {bot_response['response']}")
+                    
                     # Show prediction details in expander
                     with st.expander(f"📊 Prediction Details #{i+1}"):
                         col_a, col_b = st.columns(2)
                         with col_a:
-                            st.metric(
-                                "Risk Probability", f"{bot_response['prediction_probability']:.1%}")
+                            st.metric("Risk Probability", f"{bot_response['prediction_probability']:.1%}")
                             st.metric("Risk Level", bot_response['risk_level'])
                         with col_b:
                             st.json(bot_response['extracted_data'])
                 else:
-                    st.markdown(f"**🤖 AI Assistant:** {bot_response}")
-
+                    st.markdown(f"**🤖 EduBot:** {bot_response}")
+                
                 st.markdown("---")
-
+        
         # Chat input form with Ctrl+Enter support
         with st.form(key="chat_form", clear_on_submit=True):
             user_input = st.text_area(
-                "Enter teacher information or ask a question:",
+                "Ask me anything or provide teacher information for analysis:",
                 height=100,
-                placeholder="Example: I'm a 35-year-old math teacher with a Masters degree, 8 years experience, teaching full-time. My performance score is 85, student outcomes are 78, and I have high admin support..." if not st.session_state.is_processing else "Please wait for the AI to finish processing...",
-                help="Press Ctrl+Enter to submit" if not st.session_state.is_processing else "Processing in progress...",
+                placeholder="Try: 'Hello!', 'Who are you?', or 'I'm a 35-year-old math teacher with 8 years experience...'" if not st.session_state.is_processing else "Please wait for EduBot to finish processing...",
                 disabled=st.session_state.is_processing
             )
-
+            
             submitted = st.form_submit_button(
-                "➤ Send" if not st.session_state.is_processing else "🧠 Processing...",
+                "➤ Send" if not st.session_state.is_processing else "🧠 Processing...", 
                 type="primary",
                 disabled=st.session_state.is_processing
             )
-
+            
             if submitted and user_input.strip() and not st.session_state.is_processing:
                 # Check if configuration is valid
                 if llm_choice == "OpenAI" and not st.session_state.chatbot.openai_api_key:
@@ -409,28 +572,28 @@ def main():
                     st.rerun()
             elif submitted and not user_input.strip():
                 st.warning("Please enter a message")
-
+        
         # Process the request when in processing state
         if st.session_state.is_processing and 'pending_input' in st.session_state:
             current_input = st.session_state.pending_input
-
-            with st.spinner("🧠 Processing your request..."):
+            
+            with st.spinner("🧠 EduBot is thinking..."):
                 llm_type = st.session_state.chatbot.llm_options[llm_choice]
-
+                
                 # Process the input
                 result = st.session_state.chatbot.process_user_input(
                     current_input, llm_type
                 )
-
+                
                 # Add to chat history
                 st.session_state.chat_history.append((current_input, result))
-
+                
                 # Reset processing state
                 st.session_state.is_processing = False
                 del st.session_state.pending_input
-
+                
             st.rerun()
-
+    
     with col2:
         st.subheader("📝 Required Information")
         st.markdown("""
@@ -456,7 +619,7 @@ def main():
         - Workload level
         - Resource availability
         """)
-
+        
         st.subheader("🎯 Risk Levels")
         st.markdown("""
         - **🟢 Low (0-25%)**: Excellent
@@ -464,7 +627,6 @@ def main():
         - **🟠 High (50-75%)**: Intervention
         - **🔴 Critical (75%+)**: Urgent Action
         """)
-
 
 if __name__ == "__main__":
     main()
