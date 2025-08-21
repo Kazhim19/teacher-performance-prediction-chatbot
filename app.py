@@ -536,23 +536,24 @@ def main():
         chat_container = st.container()
         with chat_container:
             for i, (user_msg, bot_response) in enumerate(st.session_state.chat_history):
-                # User message
-                st.markdown(f"**👤 You:** {user_msg}")
-                
-                # Bot response
-                if isinstance(bot_response, dict):
-                    st.markdown(f"**🤖 EduBot:** {bot_response['response']}")
-                    
-                    # Show prediction details in expander
-                    with st.expander(f"📊 Prediction Details #{i+1}"):
-                        col_a, col_b = st.columns(2)
-                        with col_a:
-                            st.metric("Risk Probability", f"{bot_response['prediction_probability']:.1%}")
-                            st.metric("Risk Level", bot_response['risk_level'])
-                        with col_b:
-                            st.json(bot_response['extracted_data'])
-                else:
-                    st.markdown(f"**🤖 EduBot:** {bot_response}")
+                # user bubble (default person icon)
+                with st.chat_message("user"):
+                    st.markdown(user_msg)
+
+                # assistant bubble (default robot icon)
+                with st.chat_message("assistant"):
+                    if isinstance(bot_response, dict):
+                        st.markdown(bot_response['response'])
+
+                        with st.expander(f"📊 Prediction Details #{i+1}"):
+                            col_a, col_b = st.columns(2)
+                            with col_a:
+                                st.metric("Risk Probability", f"{bot_response['prediction_probability']:.1%}")
+                                st.metric("Risk Level", bot_response['risk_level'])
+                            with col_b:
+                                st.json(bot_response['extracted_data'])
+                    else:
+                        st.markdown(bot_response)
                 
                 st.markdown("---")
         
